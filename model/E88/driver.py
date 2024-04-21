@@ -1,17 +1,30 @@
-#!/usr/bin/env python
+#!/bin/python3
 import os,sys,time,socket
 import select
+import cv2
 import numpy as np
 import struct, queue, _thread
  
 UDP_PKT_SIZE= 2000
+
+receive = False
  
 out_sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
 out_sock.bind(('0.0.0.0', 6666))
+out_sock.setblocking(0)
+out_sock.settimeout(8)
  
-out_sock.sendto(b'\\xaa\\x80\\x80\\x00\\x80\\x00\\x80\\x55',("192.168.4.153", 8090))
-out_sock.sendto(b'\\x42\\x76',("192.168.4.153", 8080))
- 
+def decode_jpeg(buf):
+    try:
+        img = cv2.imdecode(np.fromstring(buf, dtype=np.uint8) ,cv2.IMREAD_COLOR)
+        cv2.imshow('IMG', img)
+        if cv2.waitKey(1) == 27:
+            exit(0)
+        #img = Image.fromarray(np.fromstring(buf, dtype=np.uint8) )
+        #cv2.imshow(img) 
+    except Exception as e:
+        print(">>>>>>>>>> imdecode error!", e)
+        pass
       
 def isValidJPEG():
     t_len = len(s_buf)
@@ -48,8 +61,7 @@ def decode_jpeg_proc():
             rx_buf_len = len(m_item[0])
             
             if chk_tail(rx_buf_len, m_item[1]):
-                #decode_jpeg(m_item[0])
-                os.write(1,m_item[0])
+                decode_jpeg(m_item[0])
             else:
                 print("#### CHECK FAILED ####")
                 pass
@@ -60,18 +72,31 @@ def decode_jpeg_proc():
 _thread.start_new_thread(decode_jpeg_proc, (()))
  
 while 1:
-    rx_buf, addr = out_sock.recvfrom(UDP_PKT_SIZE)
+    if not receive:
+        print("Comm try...")
+        out_sock.sendto(b'\x42\x76',("192.168.4.153", 8080))
+        out_sock.sendto(b'\xaa\x80\x80\x00\x80\x00\x80\x55',("192.168.4.153", 8090))
+
+    try:
+        rx_buf, addr = out_sock.recvfrom(UDP_PKT_SIZE)
+        receive = True
+    except socket.timeout:
+        receive = False
+        continue
+
+
     rv_len = len(rx_buf)
+    print(rv_len)
     sn = rx_buf[0]
     isEof = rx_buf[1]
     if sn_old != sn:
         sn_old = sn
         if len(s_buf) == 0 :
             continue
-        #Finish a whole picture. Decode later.
-        #print(\"Got a frame, try decode:\",len(s_buf))
-        #Decode
-        #decode_jpeg(s_buf)
+        # #Finish a whole picture. Decode later.
+        # print("Got a frame, try decode:",len(s_buf))
+        # #Decode
+        # decode_jpeg(s_buf)
         if not udp_recv_buf_q.full():
             if isValidJPEG():
                 udp_recv_buf_q.put((s_buf, b_jpg_len))
@@ -89,3 +114,5 @@ while 1:
         #Featch jpeg length, little endian ushort 
         b_jpg_len = rx_buf[rv_len-4:rv_len-2]
         time.sleep(0.001)
+ 
+ 

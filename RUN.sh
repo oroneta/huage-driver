@@ -12,4 +12,7 @@ fi
 # Execute the script from /model/$models[$model]/driver.py
 echo "Executing the script from /model/$model/driver.py"
 
-python3 ./model/$model/driver.py
+cd ./model/$model
+
+python3 -m pip install .
+python3 ./driver.py
